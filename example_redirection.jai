@@ -1,0 +1,37 @@
+#import "http"(STOP_CRANK="/stop");
+#import "Basic"()(MEMORY_DEBUGGER=true);
+
+main :: () {
+    // if you want to run multiple servers at the same time, here is how:
+    defer report_memory_leaks();
+
+    http_module_init();
+    defer http_module_deinit();
+
+    server  : HTTP_Server;
+    http_server_init(*server, "0.0.0.0", 8080, "logs/example_redirect/main");
+    defer http_server_deinit(*server);
+
+    http_register_url(*server, "/", .GET, (r : HTTP_Request, data : *void) -> HTTP_Response {
+        response := HTTP_Response.{status = 200, body = copy_string("hi!")};
+        http_response_header_add(*response, "Content-Type", "text/txt");
+        return response;
+    });
+
+    server_alt  : HTTP_Server;
+    // log paths should not collide if you wont mix all of logs
+    http_server_init(*server_alt, "0.0.0.0", 8081, "logs/example_redirect/alt");
+    defer http_server_deinit(*server);
+
+    http_register_url(*server_alt, ".*", .GET | .POST, (using request : HTTP_Request, data : *void) -> HTTP_Response {
+        return mk_redirect(tprint("%1%2", "http://localhost:8080", uri));
+    });
+
+    // for now it will create 2 main + 8*2 worker threads, which is seems too much
+    // but because they all most of the time will be in sleep state, i guess it's ok
+    http_server_run_and_log(*server_alt, in_background = true);
+    http_server_run_and_log(*server);
+}
+
+
+// (WTF MICROSERVICES MENTIONED???)

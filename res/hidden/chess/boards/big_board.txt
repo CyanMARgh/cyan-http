@@ -1,0 +1,16 @@
+xxx|xxx|xxx|xxx|rg_|ng_|bg_|kg_|qg_|bg_|ng_|rg_|xxx|xxx|xxx|xxx|
+xxx|xxx|xxx|xxx|pg_|pg_|pg_|pg_|pg_|pg_|pg_|pg_|xxx|xxx|xxx|xxx|
+xxx|xxx|xxx|xxx|___|___|___|___|___|___|___|___|xxx|xxx|xxx|xxx|
+xxx|xxx|xxx|xxx|___|___|___|___|___|___|___|___|xxx|xxx|xxx|xxx|
+rr_|pr_|___|___|___|___|___|___|___|___|___|___|___|___|pb_|rb_|
+nr_|pr_|___|___|___|___|___|___|___|___|___|___|___|___|pb_|nb_|
+br_|pr_|___|___|___|___|___|___|___|___|___|___|___|___|pb_|bb_|
+qr_|pr_|___|___|___|___|___|___|___|___|___|___|___|___|pb_|kb_|
+kr_|pr_|___|___|___|___|___|___|___|___|___|___|___|___|pb_|qb_|
+br_|pr_|___|___|___|___|___|___|___|___|___|___|___|___|pb_|bb_|
+nr_|pr_|___|___|___|___|___|___|___|___|___|___|___|___|pb_|nb_|
+rr_|pr_|___|___|___|___|___|___|___|___|___|___|___|___|pb_|rb_|
+xxx|xxx|xxx|xxx|___|___|___|___|___|___|___|___|xxx|xxx|xxx|xxx|
+xxx|xxx|xxx|xxx|___|___|___|___|___|___|___|___|xxx|xxx|xxx|xxx|
+xxx|xxx|xxx|xxx|pB_|pB_|pB_|pB_|pB_|pB_|pB_|pB_|xxx|xxx|xxx|xxx|
+xxx|xxx|xxx|xxx|rB_|nB_|bB_|qB_|kB_|bB_|nB_|rB_|xxx|xxx|xxx|xxx|.
