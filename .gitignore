@@ -2,3 +2,4 @@ example_auth
 example_minimal
 example_page_generation
 example_redirection
+.build/
