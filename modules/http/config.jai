@@ -9,7 +9,7 @@
     DO_DEBUG_LOGGING := false,
     USE_CONDITIONAL_HEADERS := true,
     DEFAULT_MAX_AGE := 15,
-    DOUBLE_DOT_BAN := true // for more security, ban all requests, that has .. substring in it.
+    WEIRD_PATH_BAN := true // for more security, ban all requests, that tries to escape root
 );
 
 READ_BUFFER_MAX  :: 16 * 1024;

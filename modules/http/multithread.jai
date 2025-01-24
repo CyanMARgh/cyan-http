@@ -20,7 +20,7 @@ http_wait_task :: (using server : *HTTP_Server) -> enum u8 { NEW_TASK; SHUTDOWN;
     return .NEW_TASK, task;
 }
 
-http_handle_connection_loop_thread_proc :: (thread : *Thread) -> s64 {
+handle_connection_loop_thread_proc :: (thread : *Thread) -> s64 {
     server := cast(*HTTP_Server)thread.data;
 
     while 1 {
@@ -30,7 +30,7 @@ http_handle_connection_loop_thread_proc :: (thread : *Thread) -> s64 {
         case .NEW_TASK; // do main part of iteration
         }
 
-        http_handle_connection(*task);
+        handle_connection(*task);
     }
 
     reset_temporary_storage();
@@ -42,7 +42,7 @@ init_handlers_thread_pool :: (server : *HTTP_Server) -> TCP_Error {
     for * server.workers {
         it.data = server;
         it.starting_context = context;
-        ok := thread_init(it, http_handle_connection_loop_thread_proc);
+        ok := thread_init(it, handle_connection_loop_thread_proc);
         if !ok {
             failed_at = it_index; break;
         }

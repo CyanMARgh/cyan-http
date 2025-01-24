@@ -61,7 +61,7 @@ http_module_deinit :: () {
     }
 }
 
-http_register_url :: (server: *HTTP_Server, path: string, accept_verbs: HTTP_Verb, handler: HTTP_Route_Handler_Proc) {
+register_url :: (server: *HTTP_Server, path: string, accept_verbs: HTTP_Verb, handler: HTTP_Route_Handler_Proc) {
     array_add(*server.routes, .{
         regex = compile(path),
         accept_verbs = accept_verbs,
@@ -78,13 +78,13 @@ stop_server :: (using server : *HTTP_Server) {
     shutdown = true;
 }
 
-http_server_run_and_log :: (server : *HTTP_Server, $in_background := false) #expand {
+run_and_log :: (server : *HTTP_Server, $in_background := false) #expand {
     #if in_background {
         server_thread : Thread;
         server_thread.data = server;
         redirector_thread_proc :: (thread : *Thread) -> int {
             server := cast(*HTTP_Server)thread.data;
-            err := http_server_run(server);
+            err := run(server);
             if err != .NO_PROBLEM print("server error: %\n", err);
             return 0;
         }
@@ -94,12 +94,12 @@ http_server_run_and_log :: (server : *HTTP_Server, $in_background := false) #exp
         thread_start(*server_thread);
         `defer thread_deinit(*server_thread);
     } else {
-        err := http_server_run(server);
+        err := run(server);
         if err != .NO_PROBLEM then print("server error: %\n", err);
     }
 }
 
-http_server_run :: (server: *HTTP_Server) -> TCP_Error #must {
+run :: (server: *HTTP_Server) -> TCP_Error #must {
     set_logging_root(server.logs_root);
     http_log(.SHORT_OK, "starting server on %:%\n", server.listen_host, server.listen_port);
 
@@ -155,7 +155,7 @@ http_server_run :: (server: *HTTP_Server) -> TCP_Error #must {
     return .NO_PROBLEM;
 }
 
-http_response_header_add :: (response: *HTTP_Response, header: string, content: string) {
+add_response_header :: (response: *HTTP_Response, header: string, content: string) {
     #if USE_TEMPORARY_ALLOCATOR_FOR_HANDLERS {
         array_add(*response.headers, .{key = header, value = content});
     } else {
@@ -163,13 +163,13 @@ http_response_header_add :: (response: *HTTP_Response, header: string, content: 
     }
 }
 
-http_server_init :: (using server : *HTTP_Server, _listen_host := "0.0.0.0", _listen_port :u16= 80, _logs_root := "logs_main") {
+init :: (using server : *HTTP_Server, _listen_host := "0.0.0.0", _listen_port :u16= 80, _logs_root := "logs_main") {
     listen_host = _listen_host;
     listen_port = _listen_port;
     logs_root   = _logs_root;
 }
 
-http_server_deinit :: (using server: HTTP_Server) {
+deinit :: (using server: HTTP_Server) {
     array_free(routes);
 
     for * routes {
@@ -180,7 +180,7 @@ http_server_deinit :: (using server: HTTP_Server) {
 
 #scope_module
 
-http_handle_connection :: (using http_client : *HTTP_Client) {
+handle_connection :: (using http_client : *HTTP_Client) {
     http_log(.DEBUG, "serving connection: %\n", to_string(tcp_client.address,, temp));
 
     request_id := 0;
@@ -202,16 +202,16 @@ http_handle_connection :: (using http_client : *HTTP_Client) {
             return;
         }
 
-        http_parse_common_headers(*request.headers);
+        parse_common_headers(*request.headers);
 
         response : HTTP_Response;
         http_log(.DEBUG, "generating response...\n");
         // TODO temporally, i do this instead of proper File_Async
 
         #if USE_TEMPORARY_ALLOCATOR_FOR_HANDLERS {
-            response = http_generate_response(server, *request,, temp);
+            response = generate_response(server, *request,, temp);
         } else {
-            response = http_generate_response(server, *request);
+            response = generate_response(server, *request);
             defer free_response(response);
         }
 
@@ -219,12 +219,15 @@ http_handle_connection :: (using http_client : *HTTP_Client) {
         http_log(.DEBUG, "done.\n");
 
         http_log(.DEBUG, "sending response...\n");
-        error = http_send_response(*tcp_client, response,, temp);
+        error = send_response(*tcp_client, response,, temp);
         http_log(.DEBUG, "done (%).\n", error);
-
+        {
+            lock_quard(server);
+            server.handled_requests_counter += 1;
+        }
+        
+        ok := is_good_status_code(response.status);
         response_info := tprint("[%] [%] % %", to_string(tcp_client.address,, temp), ifx cast(int)error then cast(int)error else cast(int)response.status, request.verb, request.uri_raw);
-        s := response.status;
-        ok := s >= 200 && s <= 399;
         http_log(ifx ok then .SHORT_OK else .SHORT_FAIL, "%\n", response_info);
         http_log(
             ifx ok then .VERBOSE_OK else .VERBOSE_FAIL,
@@ -242,15 +245,19 @@ http_handle_connection :: (using http_client : *HTTP_Client) {
 }
 
 #scope_file
-should_shutdown :: (using server : *HTTP_Server) -> bool {
+lock_quard :: (using server : *HTTP_Server) #expand {
     #if MULTITHREAD {
         lock(*server.queue_mtx);
-        defer unlock(*server.queue_mtx);        
+        `defer unlock(*server.queue_mtx);        
     }
+}
+
+should_shutdown :: (using server : *HTTP_Server) -> bool {
+    lock_quard(server);
     return shutdown;
 }
 
-http_parse_common_headers :: (using request : *HTTP_Headers) {
+parse_common_headers :: (using request : *HTTP_Headers) {
     for *list {
         #if USE_CONDITIONAL_HEADERS {
             if equal_nocase(it.key, "If-Modified-Since") {
@@ -263,5 +270,3 @@ http_parse_common_headers :: (using request : *HTTP_Headers) {
         }
     }
 }
-
-

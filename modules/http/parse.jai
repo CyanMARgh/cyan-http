@@ -322,12 +322,13 @@ decode_uri_component :: (s: string) -> string {
 }
 
 parse_uri :: (uri : string) -> path:string, params:URI_Params {
-    ok, path, params := split_from_left(uri, cast(u8)#char"?");
+    ok, path, _params := split_from_left(uri, cast(u8)#char"?");
+    params : URI_Params;
+
     if ok {
-        return path, parse_uri_params(params);
-    } else {
-        return uri, .{};
+        params = parse_uri_params(_params);
     }
+    return path_to_string(parse_path(decode_uri_component(path))), params;
 }
 
 parse_http_first_line :: (line : string) -> bool, HTTP_Header {

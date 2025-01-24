@@ -12,6 +12,7 @@ TCP_Client :: struct {
 
 HTTP_Server :: struct {
     #as using tcp_server : TCP_Server;
+    handled_requests_counter := 0;
 
     routes          : [..]HTTP_Route;
 

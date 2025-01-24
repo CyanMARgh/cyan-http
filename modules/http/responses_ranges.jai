@@ -6,7 +6,7 @@ response_file_ranges_unchecked :: (filepath : string, rangefmt : string, headers
     BOUNDARY_SIZE :: 13;
     req :: (cond : bool, err : HTTP_Status_Code) #expand { if !cond `return mk_response(err, "can't generate range request"); } 
 
-    content_type := get_content_type(filepath);
+    content_type := get_content_type_by_path(filepath);
     req(content_type != "",. FORBIDDEN);
 
     // if is_directory return mk_redirect()
@@ -51,8 +51,8 @@ response_file_ranges_unchecked :: (filepath : string, rangefmt : string, headers
 
     assert(segments.count == 1, "% / %", ranges, segments);
     response := HTTP_Response.{status = .PARTIAL_CONTENT};
-    http_response_header_add(*response, "Content-Range", tprint("bytes %-%/%", ranges[0].begin, ranges[0].begin + ranges[0].count - 1, file_size));
-    http_response_header_add(*response, "Content-Type", content_type);
+    add_response_header(*response, "Content-Range", tprint("bytes %-%/%", ranges[0].begin, ranges[0].begin + ranges[0].count - 1, file_size));
+    add_response_header(*response, "Content-Type", content_type);
 
     response.body = segments[0];
     response.mtime = mtime;

@@ -23,15 +23,15 @@ main :: () {
     defer http_module_deinit();
 
     server  : HTTP_Server;
-    http_server_init(*server, "0.0.0.0", 8080, "logs/example_page_generation");
-    defer http_server_deinit(*server);
+    init(*server, "0.0.0.0", 8080, "logs/example_page_generation");
+    defer deinit(*server);
 
     init(*database_mtx);
     defer destroy(*database_mtx);
 
-    http_register_url(*server, "/", .GET, (r, d) => mk_redirect("/chessdiag/big_board"));
+    register_url(*server, "/", .GET, (r, d) => mk_redirect("/chessdiag/big_board"));
 
-    http_register_url(*server, "/chessdiag/(.+)", .GET, (using request : HTTP_Request, data : *void) -> HTTP_Response {
+    register_url(*server, "/chessdiag/(.+)", .GET, (using request : HTTP_Request, data : *void) -> HTTP_Response {
         //                (.+)
         diagname := uri_captures[1];
         if path_escapes_document_root(diagname) return mk_response(.FORBIDDEN);
@@ -64,7 +64,7 @@ main :: () {
         return response_file_unchecked(svg_path, headers);
     });
 
-    http_server_run_and_log(*server);
+    run_and_log(*server);
 }
 
 #scope_file

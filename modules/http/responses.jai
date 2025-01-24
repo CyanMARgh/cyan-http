@@ -1,30 +1,44 @@
 mk_auth_response :: () -> HTTP_Response {
     response := HTTP_Response.{ status = .UNAUTHORIZED };
-    http_response_header_add(*response, "WWW-Authenticate", "Basic realm=\"R\"");
+    add_response_header(*response, "WWW-Authenticate", "Basic realm=\"R\"");
     return response;
 }
 
 mk_response :: (status : HTTP_Status_Code, info : $T = "") -> HTTP_Response {
     response := HTTP_Response.{status = xx status, body = sprint("<html><head><meta charset=\"UTF-8\"></head><body><p>%\n%</body></html>", status, info)};
-    http_response_header_add(*response, "Content-Type", "text/html; charset=utf-8'");
+    add_response_header(*response, "Content-Type", "text/html; charset=utf-8'");
     return response;
 }
 
 mk_redirect :: (to : string, status := HTTP_Status_Code.TEMPORARY_REDIRECT) -> HTTP_Response {
     response := HTTP_Response.{ status = status };
-    http_response_header_add(*response, "Location", to);
+    add_response_header(*response, "Location", to);
     return response;
 }
 
 mk_response_404 :: (id : Any = "---") -> HTTP_Response {
     response := HTTP_Response.{status = 404, body = sprint("<html><head><meta charset=\"UTF-8\"></head><body><p>чувак, ты думал что-то здесь будет?</p><p>о, нет...</p><p>404: %</p></body></html>", id)};
-    http_response_header_add(*response, "Content-Type", "text/html; charset=utf-8'");
+    add_response_header(*response, "Content-Type", "text/html; charset=utf-8'");
     return response;
 }
 
-response_file_unchecked :: (path : string, using headers : HTTP_Headers, max_age := 0) -> HTTP_Response {
-    content_type := get_content_type(path);
-    if !content_type return mk_response_404("invalid file type");
+add_content_type_header :: (response : *HTTP_Response, str : string, $by_path := false) -> ok:bool {
+    #if by_path {
+        content_type := get_content_type_by_path(str);
+    } else {        
+        content_type := get_content_type_by_ext(str);
+    }
+    if !content_type return false;
+    add_response_header(response, "Content-Type", content_type);
+    return true;
+}
+
+response_file_unchecked :: (path : string, using headers : HTTP_Headers, max_age := 0, ignore_filetype := false) -> HTTP_Response {
+    response := HTTP_Response.{status = 200, max_age = max_age};
+    
+    if !ignore_filetype {
+        add_content_type_header(*response, path, by_path=true);
+    }
 
     mtime, _, exists := file_modtime_and_size(path);
     if !exists return mk_response(.FORBIDDEN, "can't open file");
@@ -40,17 +54,16 @@ response_file_unchecked :: (path : string, using headers : HTTP_Headers, max_age
     content, ok2 := read_entire_file(path);
     if !ok2 return mk_response(.INTERNAL_SERVER_ERROR);
 
-    response := HTTP_Response.{status = 200, body = content, max_age = max_age};
+    response.body = content;
     response.mtime = mtime;
     response.known_mtime = true;
 
-    http_response_header_add(*response, "Content-Type", content_type);
 
     return response;
 }
 
 #scope_module
-http_generate_response :: (server : *HTTP_Server, request : *HTTP_Request) -> HTTP_Response {
+generate_response :: (server : *HTTP_Server, request : *HTTP_Request) -> HTTP_Response {
     #if MULTITHREAD {
         lock(*http_request_generator_mtx);
         defer unlock(*http_request_generator_mtx);
@@ -60,8 +73,13 @@ http_generate_response :: (server : *HTTP_Server, request : *HTTP_Request) -> HT
         return .{status = .I_AM_A_TEAPOT};
     }
 
-    #if DOUBLE_DOT_BAN if contains(request.uri, "..") {
-        return mk_response(.BAD_REQUEST, "я вижу, что ты пытаешься сделать 😉");
+    #if WEIRD_PATH_BAN {
+        path := request.uri;
+        banned_keywords := string.["..", "/bin/", "/dev/"];
+
+        if !path || contains(path, "//") || contains(path, "..") || contains(path, "/bin/") || contains(path, "/dev/") {
+            return mk_response(.BAD_REQUEST, "я вижу, что ты пытаешься сделать 😉");
+        }            
     }
 
     for route : server.routes {
@@ -74,7 +92,7 @@ http_generate_response :: (server : *HTTP_Server, request : *HTTP_Request) -> HT
         request.uri_captures = captures;
         response := route.handler.proc(request, route.handler.data);
     
-        http_add_extra_response_headers(*response);
+        add_extra_response_headers(*response);
         return response;
     }
 
@@ -90,10 +108,8 @@ free_response :: (response: HTTP_Response) {
     array_free(response.headers);
 }
 
-get_content_type :: (filepath : string) -> string {
-    ok, _, ext := split_from_right(filepath, cast(u8)#char".");
-    if !ok return "";
-
+get_content_type_by_ext :: (_ext : string) -> string {
+    ext := _ext;
     category : string;
     if ext == {
     case "png"; #through;
@@ -116,27 +132,32 @@ get_content_type :: (filepath : string) -> string {
     case;
         return "";
     }
-    return tprint("%/%", category, ext);
+    return tprint("%/%", category, ext);    
+}
+get_content_type_by_path :: (filepath : string) -> string {
+    ok, _, ext := split_from_right(filepath, cast(u8)#char".");
+    if !ok return "";
+    return get_content_type_by_ext(ext);
 }
 
-http_add_extra_response_headers :: (using response : *HTTP_Response) {
-    http_response_header_add(response, "Content-Length", tprint("%", body.count));
+add_extra_response_headers :: (using response : *HTTP_Response) {
+    add_response_header(response, "Content-Length", tprint("%", body.count));
     if max_age >= 0 {
-        http_response_header_add(response, "Cache-Control", tprint("public, max-age=%", max_age));
+        add_response_header(response, "Cache-Control", tprint("public, max-age=%", max_age));
     }
     if known_mtime {
-        http_response_header_add(response, "Last-Modified", apollo_time_to_web_time(mtime));
+        add_response_header(response, "Last-Modified", apollo_time_to_web_time(mtime));
     }
     if #complete connection_type == {
     case .NOT_STATED;
     case .KEEP_ALIVE;
-        http_response_header_add(response, "Connection", "keep-alive");
+        add_response_header(response, "Connection", "keep-alive");
     case .CLOSE;
-        http_response_header_add(response, "Connection", "close");
+        add_response_header(response, "Connection", "close");
     } 
 }
 
-http_send_response :: (client: *TCP_Client, response: HTTP_Response) -> TCP_Error #must {
+send_response :: (client: *TCP_Client, response: HTTP_Response) -> TCP_Error #must {
     http_log(.DEBUG, "building request string...\n");
     sb : String_Builder;
 
