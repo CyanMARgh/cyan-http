@@ -19,8 +19,7 @@ BUILD_TIME :: #run current_time_consensus();
 main :: () {
     defer report_memory_leaks();
 
-    http_module_init();
-    defer http_module_deinit();
+    http_module_use();
 
     server  : HTTP_Server;
     init(*server, "0.0.0.0", 8080, "logs/example_page_generation");

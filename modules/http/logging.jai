@@ -1,3 +1,15 @@
+#scope_export
+
+log_debug         :: #bake_arguments l(flags = .VERY_VERBOSE_ONLY);
+log_debug_error   :: #bake_arguments l(flags = .VERY_VERBOSE_ONLY | .ERROR);
+log_verbose       :: #bake_arguments l(flags = .VERBOSE_ONLY);
+log_verbose_error :: #bake_arguments l(flags = .VERBOSE_ONLY | .ERROR);
+
+set_logging_root :: (root : string) {
+    make_directory_if_it_does_not_exist(root, recursive=true);
+    context.http_logging_root = root;
+}
+
 #scope_module
 file_write_string :: (file : *File, content : string) {
     file_write(file, content.data, content.count);
@@ -10,8 +22,7 @@ log_to_file :: (dest : string, content : string, write_time := false) {
     file_close(*file);
 }
 
-#scope_export
-http_log :: (kind : enum u8 {VERBOSE_OK; VERBOSE_FAIL; SHORT_OK; SHORT_FAIL; DEBUG;}, fmt : string, args : ..Any) #expand {
+custom_http_logger :: (message : string, data : *void, info : Log_Info) {
     #if MULTITHREAD {
         lock(*http_log_mtx);
         defer unlock(*http_log_mtx);        
@@ -21,52 +32,47 @@ http_log :: (kind : enum u8 {VERBOSE_OK; VERBOSE_FAIL; SHORT_OK; SHORT_FAIL; DEB
     short   :: "short.txt";
     verbose :: "verbose.txt";
 
-    color : Console_Color;
-    #if USE_LOGGING {
-        dst : string;
-        str := tprint(fmt, ..args);
-        dublicate_to_stdout := false;
-        write_time := true;
-        ifx #complete kind == {
-        case .VERBOSE_OK;
-            dst = verbose;
-            color = .GREEN;
-        case .VERBOSE_FAIL;
-            dst = verbose;
-            color = .RED;
-        case .SHORT_OK;
-            dst = short;
-            dublicate_to_stdout = true;
-            color = .GREEN;
-        case .SHORT_FAIL;
-            dst = short;
-            dublicate_to_stdout = true;
-            color = .RED;
-        case .DEBUG;
-            dst = debug;
-            dublicate_to_stdout = DO_DEBUG_LOGGING;
-            write_time = false;
-        }
+    color : Console_Color = .WHITE;
+    dst : string;
+    dublicate_to_stdout := false;
+    write_time := true;
 
-        log_to_file(tprint("%/%", context.http_logging_root, dst), str, write_time = write_time);
-        if dublicate_to_stdout {
-            set_console_color(color);
-            defer reset_console_color();
-            write_string(str);
-        }
+    if info.common_flags & .VERY_VERBOSE_ONLY {
+        dst = "debug.txt";
+        write_time = false;
+        dublicate_to_stdout = DO_DEBUG_LOGGING;
+    } else if info.common_flags & .VERBOSE_ONLY {
+        dst = "verbose.txt";
+    } else {
+        dst = "short.txt";
+        dublicate_to_stdout = true;
+    }
+
+    if info.common_flags & .ERROR {
+        color = .RED;
+    } else if info.common_flags & .WARNING {
+        color = .YELLOW;
+    } else if !(info.common_flags & .VERY_VERBOSE_ONLY) {
+        color = .GREEN;
+    }
+
+    log_to_file(tprint("%/%", context.http_logging_root, dst), message, write_time = write_time);
+
+    if dublicate_to_stdout {
+        set_console_color(color);
+        defer reset_console_color();
+        write_string(message);
     }
 }
 
-set_logging_root :: (root : string) {
-    make_directory_if_it_does_not_exist(root, recursive=true);
-    context.http_logging_root = root;
-}
-
-// free_logging_paths :: () {
-// }
-
 #scope_file
+
+l :: (#procedure_of_call log(""));
 
 #add_context http_logging_root := "logs";
 
 #import "Print_Color";
+
+
+
+

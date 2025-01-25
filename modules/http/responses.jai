@@ -158,7 +158,7 @@ add_extra_response_headers :: (using response : *HTTP_Response) {
 }
 
 send_response :: (client: *TCP_Client, response: HTTP_Response) -> TCP_Error #must {
-    http_log(.DEBUG, "building request string...\n");
+    log_debug("building request string...\n");
     sb : String_Builder;
 
     print_to_builder(*sb, "HTTP/1.1 % %\r\n", cast(int)response.status, http_get_status_text(response.status));
@@ -170,10 +170,10 @@ send_response :: (client: *TCP_Client, response: HTTP_Response) -> TCP_Error #mu
     append(*sb, response.body);
 
     all_data := builder_to_string(*sb);
-    http_log(.DEBUG, "done. writing...\n");
+    log_debug("done. writing...\n");
 
     err, count := send_with_timeout(client, all_data, 15);
 
-    http_log(.DEBUG, "done.\n");
+    log_debug("done.\n");
     return err;
 }

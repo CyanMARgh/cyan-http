@@ -165,10 +165,10 @@ read_request_and_parse_on_fly :: (using tcp_client : TCP_Client) -> TCP_Error #m
     total_scanned : int;
 
     for _main : 1..1 while true {
-        http_log(.DEBUG, "recv...\n");
+        log_debug("recv...\n");
         new_data : [READ_BUFFER_MAX]u8 = ---;
         err, n := read_with_timeout(tcp_client, *new_data, READ_BUFFER_MAX, READ_TIMEOUT);
-        http_log(.DEBUG, "% / %\n", err, n);
+        log_debug("% / %\n", err, n);
         if err return err, .{};
         total_scanned += n;
         if total_scanned > REQUEST_MAX_SIZE return .REQUEST_TOO_BIG, .{};
@@ -184,7 +184,7 @@ read_request_and_parse_on_fly :: (using tcp_client : TCP_Client) -> TCP_Error #m
 http_partial_request_parse :: (request_parsed : *HTTP_Request, request_buffer : *[..]u8, state : *HTTP_Parsing_Full_State, new_data : []u8) -> finished:bool, TCP_Error #must {
     require :: (cond : bool, fmt : string, args : ..Any) #expand {
         if cond return;
-        http_log(.DEBUG, fmt, ..args);
+        log_debug(fmt, ..args);
         `return false, .NOT_HTTP;
     }
     chop_parsed :: (request : *[..]u8) -> string {
@@ -240,31 +240,31 @@ http_partial_request_parse :: (request_parsed : *HTTP_Request, request_buffer : 
                 header_str := chop_parsed(request_buffer);
                 if header_str {
                     ok, header := parse_http_first_line(header_str);
-                    // http_log(.DEBUG, "header: %\n", header);
+                    // log_debug("header: %\n", header);
                     if header.key == "Content-Length" {
                         num, ok := string_to_int(header.value);
-                        // http_log(.DEBUG, "num: %\n", num);
+                        // log_debug("num: %\n", num);
                         if !ok return false, .NOT_HTTP;
                         if num > REQUEST_MAX_SIZE return false, .REQUEST_TOO_BIG;
-                        http_log(.DEBUG, "C-L: [%]\n", num);
+                        log_debug("C-L: [%]\n", num);
                         state.body_length_remained = num;
                     }
                     require(ok, "invalid header\n");
                     array_add(*request_parsed.headers.list, header);
                     switch(.HEADER);
                 }
-                // http_log(.DEBUG, "rem: %\n", state.body_length_remained);
+                // log_debug("rem: %\n", state.body_length_remained);
                 if state.body_length_remained > 0 switch(.BODY);
                 return true, .NO_PROBLEM;
             }
         case .BODY;
             array_add(request_buffer, c);
             state.body_length_remained -= 1;
-            // http_log(.DEBUG, "remained: %\n", state.body_length_remained);
+            // log_debug("remained: %\n", state.body_length_remained);
             assert(state.body_length_remained >= 0);
             if state.body_length_remained == 0 {
                 request_parsed.body = chop_parsed(request_buffer);
-                // http_log(.DEBUG, "BODY: %\n", request_parsed.body);
+                // log_debug("BODY: %\n", request_parsed.body);
                 return true, .NO_PROBLEM;
             }
             continue;

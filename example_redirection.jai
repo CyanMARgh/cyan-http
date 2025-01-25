@@ -1,12 +1,10 @@
 #import "http"(STOP_CRANK="/stop");
 #import "Basic"()(MEMORY_DEBUGGER=true);
 
+// if you want to run multiple servers at the same time, here is how:
 main :: () {
-    // if you want to run multiple servers at the same time, here is how:
     defer report_memory_leaks();
-
-    http_module_init();
-    defer http_module_deinit();
+    http_module_use();
 
     server  : HTTP_Server;
     init(*server, "0.0.0.0", 8080, "logs/example_redirect/main");

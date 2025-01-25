@@ -10,7 +10,7 @@ http_wait_task :: (using server : *HTTP_Server) -> enum u8 { NEW_TASK; SHUTDOWN;
     defer unlock(*queue_mtx);
 
     if shutdown {
-        http_log(.DEBUG, "worker down\n");
+        log_debug("worker down\n");
         return .SHUTDOWN, .{};
     }
     

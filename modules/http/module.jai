@@ -34,7 +34,7 @@
 }
 
 #scope_export
-http_module_init :: () {
+http_module_use :: () #expand {
     POSIX.signal(POSIX.SIGPIPE, POSIX.SIG_IGN);
     #if SSL {
         ssl_init(certificate="keys/fullchain.pem", privatekey="keys/privkey.pem");
@@ -47,30 +47,36 @@ http_module_init :: () {
             init(*http_request_generator_mtx);
         }
     }
-}
-http_module_deinit :: () {
-    #if MULTITHREAD {
-        destroy(*http_log_mtx);
-        #if USE_REQUEST_GENERATOR_LOCK {
-            destroy(*http_request_generator_mtx);
+
+    old_logger := context.logger;
+    context.logger = custom_http_logger;
+
+    `defer {
+        context.logger = old_logger;
+
+        #if MULTITHREAD {
+            destroy(*http_log_mtx);
+            #if USE_REQUEST_GENERATOR_LOCK {
+                destroy(*http_request_generator_mtx);
+            }
         }
-    }
 
-    #if SSL {
-        ssl_deinit();
+        #if SSL {
+            ssl_deinit();
+        }        
     }
 }
 
-register_url :: (server: *HTTP_Server, path: string, accept_verbs: HTTP_Verb, handler: HTTP_Route_Handler_Proc) {
+register_url :: (server: *HTTP_Server, path: string, accept_verbs: HTTP_Verb, handler: HTTP_Route_Handler_Proc, data : *void = null) {
     array_add(*server.routes, .{
         regex = compile(path),
         accept_verbs = accept_verbs,
-        handler = .{proc = handler}
+        handler = .{proc = handler, data = data}
     });
 }
 
 stop_server :: (using server : *HTTP_Server) {
-    http_log(.DEBUG, "manual stop\n");
+    log_verbose("manual stop\n");
     #if MULTITHREAD {
         lock(*queue_mtx);
         unlock(*queue_mtx);
@@ -101,7 +107,7 @@ run_and_log :: (server : *HTTP_Server, $in_background := false) #expand {
 
 run :: (server: *HTTP_Server) -> TCP_Error #must {
     set_logging_root(server.logs_root);
-    http_log(.SHORT_OK, "starting server on %:%\n", server.listen_host, server.listen_port);
+    log("starting server on %:%\n", server.listen_host, server.listen_port);
 
     err := start_tcp_server(server);
     if err != .NO_PROBLEM { return err; }
@@ -115,7 +121,7 @@ run :: (server: *HTTP_Server) -> TCP_Error #must {
 
     requests_count := 0;
     while main_loop:=true {
-        http_log(.DEBUG, "waiting for connection...\n");
+        log_debug("waiting for connection...\n");
         connection : TCP_Client;
         // TODO temporal workaround for manual server stop
         while waiting_loop:=true {
@@ -128,7 +134,7 @@ run :: (server: *HTTP_Server) -> TCP_Error #must {
             case .TIMEOUT; continue;
             }
         }
-        http_log(.DEBUG, "connected: [%]\n", to_string(connection.address,, temp));
+        log_debug("connected: [%]\n", to_string(connection.address,, temp));
 
         task := HTTP_Client.{tcp_client = connection, server = server};
         #if MULTITHREAD {
@@ -150,7 +156,7 @@ run :: (server: *HTTP_Server) -> TCP_Error #must {
             break;
         }
     }
-    http_log(.DEBUG, "exiting...\n");
+    log_debug("exiting...\n");
 
     return .NO_PROBLEM;
 }
@@ -174,38 +180,45 @@ deinit :: (using server: HTTP_Server) {
 
     for * routes {
         uninit(*it.regex);
-        free(it.handler.data);
+        // free(it.handler.data);
+    }
+}
+
+lock_quard :: (using server : *HTTP_Server) #expand {
+    #if MULTITHREAD {
+        lock(*server.queue_mtx);
+        `defer unlock(*server.queue_mtx);        
     }
 }
 
 #scope_module
 
 handle_connection :: (using http_client : *HTTP_Client) {
-    http_log(.DEBUG, "serving connection: %\n", to_string(tcp_client.address,, temp));
+    log_debug("serving connection: %\n", to_string(tcp_client.address,, temp));
 
     request_id := 0;
     defer {
-        http_log(.DEBUG, "closing connection, handled: %\n", request_id);
+        log_debug("closing connection, handled: %\n", request_id);
         close(http_client);
     }
 
     while request_id < max_requests_to_handle {
         defer reset_temporary_storage();
-        http_log(.DEBUG, "reading request...\n");
+        log_debug("reading request...\n");
         request : HTTP_Request;
         error, request = read_request_and_parse_on_fly(tcp_client,, temp);
-        http_log(.DEBUG, "done.\n");
+        log_debug("done.\n");
         if error {
             show := error != .RECV_TIMEOUT && error != .SOCKET_READ;
-            http_log(ifx show then .SHORT_FAIL else .DEBUG, "ERROR: %\n", error);
-            http_log(.VERBOSE_FAIL, "%\n", request_to_string(request,, temp));
+            log("ERROR: %\n", error, flags = ifx show then .ERROR else .VERY_VERBOSE_ONLY);
+            log_verbose_error("%\n", request_to_string(request,, temp));
             return;
         }
 
         parse_common_headers(*request.headers);
 
         response : HTTP_Response;
-        http_log(.DEBUG, "generating response...\n");
+        log_debug("generating response...\n");
         // TODO temporally, i do this instead of proper File_Async
 
         #if USE_TEMPORARY_ALLOCATOR_FOR_HANDLERS {
@@ -216,11 +229,11 @@ handle_connection :: (using http_client : *HTTP_Client) {
         }
 
         response.connection_type = ifx request_id < max_requests_to_handle - 1 then .KEEP_ALIVE else .CLOSE;
-        http_log(.DEBUG, "done.\n");
+        log_debug("done.\n");
 
-        http_log(.DEBUG, "sending response...\n");
+        log_debug("sending response...\n");
         error = send_response(*tcp_client, response,, temp);
-        http_log(.DEBUG, "done (%).\n", error);
+        log_debug("done (%).\n", error);
         {
             lock_quard(server);
             server.handled_requests_counter += 1;
@@ -228,11 +241,11 @@ handle_connection :: (using http_client : *HTTP_Client) {
         
         ok := is_good_status_code(response.status);
         response_info := tprint("[%] [%] % %", to_string(tcp_client.address,, temp), ifx cast(int)error then cast(int)error else cast(int)response.status, request.verb, request.uri_raw);
-        http_log(ifx ok then .SHORT_OK else .SHORT_FAIL, "%\n", response_info);
-        http_log(
-            ifx ok then .VERBOSE_OK else .VERBOSE_FAIL,
+        log("%\n", response_info, flags = ifx ok then .NONE else .ERROR);
+        log(
             "%\n%\n\n",
-            response_info, request_to_string(request,, temp)
+            response_info, request_to_string(request,, temp),
+            flags = ifx ok then .VERBOSE_ONLY else .VERBOSE_ONLY | .ERROR
         );
 
         if error return;
@@ -245,12 +258,6 @@ handle_connection :: (using http_client : *HTTP_Client) {
 }
 
 #scope_file
-lock_quard :: (using server : *HTTP_Server) #expand {
-    #if MULTITHREAD {
-        lock(*server.queue_mtx);
-        `defer unlock(*server.queue_mtx);        
-    }
-}
 
 should_shutdown :: (using server : *HTTP_Server) -> bool {
     lock_quard(server);
@@ -263,10 +270,11 @@ parse_common_headers :: (using request : *HTTP_Headers) {
             if equal_nocase(it.key, "If-Modified-Since") {
                 t, ok := web_time_to_apollo_time(it.value);
                 if !ok continue;
-                http_log(.VERBOSE_OK, "If-Modified-Since: %\n", calendar_to_string(to_calendar(t)));
+                log_verbose("If-Modified-Since: %\n", calendar_to_string(to_calendar(t)));
                 condflags |= .IF_MODIFIED_SINCE;
                 if_modified_since = t;
             }             
         }
     }
 }
+
